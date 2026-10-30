@@ -235,17 +235,6 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         boolean mine = target.mineLeg();
 
-        // Saut automatique uniquement en TRANSIT (marches, petits obstacles) ; jamais en minage.
-        boolean jump = !mine && player.onGround()
-                && (player.horizontalCollision || dy > 0.6);
-
-        mc.options.keyDown.setDown(false);
-        mc.options.keyLeft.setDown(false);
-        mc.options.keyRight.setDown(false);
-        mc.options.keyShift.setDown(false);
-        mc.options.keyUp.setDown(true);
-        mc.options.keyJump.setDown(jump);
-        mc.options.keyAttack.setDown(mine);
 
         // Détection de blocage
         if (here.distanceTo(stuckAnchor) > STUCK_DISTANCE) {
