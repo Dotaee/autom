@@ -17,6 +17,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -42,7 +43,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // ---- Réglages ----
     /** Le circuit ne démarre qu'en solo (comme annoncé dans la description). Mettre false pour lever la limite. */
-    private static final boolean SINGLEPLAYER_ONLY = false;
+    private static final boolean SINGLEPLAYER_ONLY = true;
     private static final float MIN_HEALTH = 6.0f;          // 3 coeurs
     /** Arrêt quand l'inventaire est plein (false = le bot continue de miner quand même). */
     private static final boolean STOP_WHEN_INVENTORY_FULL = false;
@@ -278,8 +279,10 @@ public final class AutoMinerClient implements ClientModInitializer {
             if (STOP_ON_UNLISTED_BLOCK
                     && mc.hitResult instanceof BlockHitResult hit
                     && hit.getType() == HitResult.Type.BLOCK) {
-                Block aimed = mc.level.getBlockState(hit.getBlockPos()).getBlock();
-                if (!ALLOWED_BLOCKS.contains(aimed)) {
+                BlockState aimedState = mc.level.getBlockState(hit.getBlockPos());
+                Block aimed = aimedState.getBlock();
+                // Viser de l'air (ou rien) ne doit jamais déclencher l'arrêt.
+                if (!aimedState.isAir() && !ALLOWED_BLOCKS.contains(aimed)) {
                     return "bloc non autorisé visé (" + BuiltInRegistries.BLOCK.getKey(aimed) + ").";
                 }
             }
