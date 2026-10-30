@@ -60,6 +60,7 @@ public final class AutoMinerClient implements ClientModInitializer {
     /** Pendant un segment MINAGE : arrêt si le bloc visé n'est pas dans ALLOWED_BLOCKS. */
     private static final boolean STOP_ON_UNLISTED_BLOCK = true;
     private static final Set<Block> ALLOWED_BLOCKS = Set.of(
+            Blocks.GLASS,
             Blocks.STONE, Blocks.COBBLESTONE,
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
             Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
