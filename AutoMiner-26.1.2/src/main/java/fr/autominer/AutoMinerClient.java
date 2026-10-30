@@ -73,8 +73,8 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static final boolean MOUSE4_ENABLED = true;
     private static final int MOUSE4_INTERVAL_TICKS = 200;  // 200 ticks = 10 s
     private static final int MOUSE4_HOLD_TICKS = 2;        // durée de l'appui
-    private static final InputConstants.Key MOUSE4 =
-            InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_4);
+    private static final InputConstants.Key MOUSE4 = 
+        InputConstants.getKey("key.mouse.4");
 
     // ---- État ----
     private static final List<RoutePoint> ROUTE = new ArrayList<>();
