@@ -36,8 +36,10 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // ---- Réglages ----
     /** Le circuit ne démarre qu'en solo (comme annoncé dans la description). Mettre false pour lever la limite. */
-    private static final boolean SINGLEPLAYER_ONLY = false;
+    private static final boolean SINGLEPLAYER_ONLY = true;
     private static final float MIN_HEALTH = 6.0f;          // 3 coeurs
+    /** Arrêt quand l'inventaire est plein (false = le bot continue de miner quand même). */
+    private static final boolean STOP_WHEN_INVENTORY_FULL = false;
     private static final int MIN_DURABILITY_LEFT = 12;
     private static final double REACH_HORIZONTAL = 0.8;
     private static final double REACH_VERTICAL = 1.3;
@@ -232,7 +234,7 @@ public final class AutoMinerClient implements ClientModInitializer {
         if (stuckTicks > STUCK_TICKS) return "joueur bloqué depuis trop longtemps.";
 
         if (target.mineLeg()) {
-            if (player.getInventory().getFreeSlot() < 0) return "inventaire plein.";
+            if (STOP_WHEN_INVENTORY_FULL && player.getInventory().getFreeSlot() < 0) return "inventaire plein.";
 
             ItemStack held = player.getMainHandItem();
             if (held.isDamageableItem()
