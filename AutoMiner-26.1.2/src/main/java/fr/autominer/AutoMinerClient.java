@@ -43,7 +43,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // ---- Réglages ----
     /** Le circuit ne démarre qu'en solo (comme annoncé dans la description). Mettre false pour lever la limite. */
-    private static final boolean SINGLEPLAYER_ONLY = false;
+    private static final boolean SINGLEPLAYER_ONLY = true;
     private static final float MIN_HEALTH = 6.0f;          // 3 coeurs
     /** Arrêt quand l'inventaire est plein (false = le bot continue de miner quand même). */
     private static final boolean STOP_WHEN_INVENTORY_FULL = false;
@@ -57,8 +57,6 @@ public final class AutoMinerClient implements ClientModInitializer {
     /** Pendant un segment MINAGE : arrêt si le bloc visé n'est pas dans ALLOWED_BLOCKS. */
     private static final boolean STOP_ON_UNLISTED_BLOCK = true;
     private static final Set<Block> ALLOWED_BLOCKS = Set.of(
-            Blocks.GLASS,
-            Blocks.OBSIDIAN, Blocks.CRYING_OBSIDIAN,
             Blocks.STONE, Blocks.COBBLESTONE,
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
             Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
@@ -235,6 +233,17 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         boolean mine = target.mineLeg();
 
+        // Saut automatique uniquement en TRANSIT (marches, petits obstacles) ; jamais en minage.
+        boolean jump = !mine && player.onGround()
+                && (player.horizontalCollision || dy > 0.6);
+
+        mc.options.keyDown.setDown(false);
+        mc.options.keyLeft.setDown(false);
+        mc.options.keyRight.setDown(false);
+        mc.options.keyShift.setDown(false);
+        mc.options.keyUp.setDown(true);
+        mc.options.keyJump.setDown(jump);
+        mc.options.keyAttack.setDown(mine);
 
         // Détection de blocage
         if (here.distanceTo(stuckAnchor) > STUCK_DISTANCE) {
