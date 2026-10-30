@@ -3,7 +3,7 @@ package fr.autominer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -65,13 +65,13 @@ public final class AutoMinerClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath("autominer", "main"));
 
-        recordKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        recordKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.autominer.record", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, category));
-        legTypeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        legTypeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.autominer.toggle_mining", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H, category));
-        runKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        runKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.autominer.run", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
-        clearKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        clearKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.autominer.clear", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
 
         ROUTE.addAll(RouteStore.load());
@@ -275,7 +275,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     private static void message(Minecraft mc, String text) {
         if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("[AutoMiner] " + text), false);
+            mc.player.sendSystemMessage(Component.literal("[AutoMiner] " + text));
         }
     }
 }
