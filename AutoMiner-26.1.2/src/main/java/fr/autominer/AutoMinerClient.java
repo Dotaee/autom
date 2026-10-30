@@ -36,7 +36,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // ---- Réglages ----
     /** Le circuit ne démarre qu'en solo (comme annoncé dans la description). Mettre false pour lever la limite. */
-    private static final boolean SINGLEPLAYER_ONLY = true;
+    private static final boolean SINGLEPLAYER_ONLY = false;
     private static final float MIN_HEALTH = 6.0f;          // 3 coeurs
     private static final int MIN_DURABILITY_LEFT = 12;
     private static final double REACH_HORIZONTAL = 0.8;
