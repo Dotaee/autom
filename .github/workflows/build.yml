@@ -15,7 +15,8 @@ jobs:
         with:
           gradle-version: current
       - run: gradle build
+        working-directory: AutoMiner-26.1.2
       - uses: actions/upload-artifact@v4
         with:
           name: autominer
-          path: build/libs/*.jar
+          path: AutoMiner-26.1.2/build/libs/*.jar
