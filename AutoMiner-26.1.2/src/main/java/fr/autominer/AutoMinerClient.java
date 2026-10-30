@@ -3,9 +3,11 @@ package fr.autominer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -25,6 +27,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -57,8 +60,6 @@ public final class AutoMinerClient implements ClientModInitializer {
     /** Pendant un segment MINAGE : arrêt si le bloc visé n'est pas dans ALLOWED_BLOCKS. */
     private static final boolean STOP_ON_UNLISTED_BLOCK = true;
     private static final Set<Block> ALLOWED_BLOCKS = Set.of(
-            Blocks.OBSIDIAN, Blocks.GLASS,
-            Blocks.CRYING_OBSIDIAN,
             Blocks.STONE, Blocks.COBBLESTONE,
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
             Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
@@ -68,13 +69,34 @@ public final class AutoMinerClient implements ClientModInitializer {
             Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE,
             Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE,
             Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE,
-            Blocks.ANCIENT_DEBRIS);
+            Blocks.ANCIENT_DEBRIS,
+            Blocks.OBSIDIAN, Blocks.CRYING_OBSIDIAN);
+
+    /** Blocs ignorés par le contrôle : la liste ci-dessus + tous les verres (verre, teinté, coloré). */
+    private static boolean isAllowedBlock(Block block) {
+        if (ALLOWED_BLOCKS.contains(block)) return true;
+        String path = BuiltInRegistries.BLOCK.getKey(block).getPath();
+        return path.equals("glass") || path.endsWith("_glass");
+    }
+    /** Quand le bot est bloqué : envoie la commande, attend, puis reprend depuis le premier point. */
+    private static final boolean RECOVERY_ENABLED = true;
+    private static final String RECOVERY_COMMAND = "home gen";   // sans le "/"
+    private static final int RECOVERY_WAIT_TICKS = 200;          // 10 s
+    private static final int RECOVERY_MAX_PER_WINDOW = 4;        // au-delà : arrêt définitif
+    private static final int RECOVERY_WINDOW_TICKS = 12000;      // fenêtre de 10 minutes
+    /**
+     * Garde-fou : si un message du chat contient ton pseudo (staff, message privé, question...),
+     * le bot S'ARRÊTE et ne se téléporte pas : tu dois répondre toi-même.
+     */
+    private static final boolean STOP_ON_CHAT_MENTION = true;
     /** Appui automatique sur le bouton 4 de la souris (MOUSE4) pendant que le circuit tourne. */
     private static final boolean MOUSE4_ENABLED = true;
     private static final int MOUSE4_INTERVAL_TICKS = 200;  // 200 ticks = 10 s
-    private static final int MOUSE4_HOLD_TICKS = 2;        // durée de l'appui
-    private static final InputConstants.Key MOUSE4 = 
-        InputConstants.getKey("key.mouse.4");
+    private static final int MOUSE4_HOLD_TICKS = 4;        // durée de l'appui
+    /** Affiche un message dans le chat à chaque appui simulé (pour vérifier que ça part bien). */
+    private static final boolean MOUSE4_DEBUG = true;
+    private static final InputConstants.Key MOUSE4 =
+            InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_4);
 
     // ---- État ----
     private static final List<RoutePoint> ROUTE = new ArrayList<>();
@@ -85,6 +107,10 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static int stuckTicks = 0;
     private static Vec3 stuckAnchor = Vec3.ZERO;
     private static int mouse4Timer = 0;
+    private static int recoveryWaitLeft = 0;
+    private static long runTicks = 0;
+    private static final List<Long> recoveryTimes = new ArrayList<>();
+    private static volatile boolean chatMention = false;
 
     private static KeyMapping recordKey;
     private static KeyMapping legTypeKey;
@@ -107,6 +133,9 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         ROUTE.addAll(RouteStore.load());
         ClientTickEvents.END_CLIENT_TICK.register(AutoMinerClient::tick);
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> onChatMessage(message));
+        ClientReceiveMessageEvents.CHAT.register(
+                (message, signedMessage, sender, params, timestamp) -> onChatMessage(message));
     }
 
     // =====================================================================================
@@ -121,14 +150,41 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         handleKeys(mc, player);
         if (!running) return;
+        runTicks++;
+
+        if (STOP_ON_CHAT_MENTION && chatMention) {
+            stop(mc);
+            message(mc, "Arrêt : un message du chat contient ton pseudo. Réponds, puis relance avec J.");
+            return;
+        }
 
         if (mc.screen != null) { // inventaire, chat, menu pause... on lâche les touches
             releaseKeys(mc);
             return;
         }
+
+        // Attente après la commande de retour : on ne bouge pas, puis on reprend au premier point.
+        if (recoveryWaitLeft > 0) {
+            releaseKeys(mc);
+            recoveryWaitLeft--;
+            if (recoveryWaitLeft == 0) {
+                targetIndex = 1 % ROUTE.size();
+                stuckTicks = 0;
+                stuckAnchor = player.position();
+                mouse4Timer = 0;
+                message(mc, "Reprise du circuit depuis le premier point.");
+            }
+            return;
+        }
+
         if (targetIndex >= ROUTE.size()) targetIndex = 0;
 
         RoutePoint target = ROUTE.get(targetIndex);
+
+        if (RECOVERY_ENABLED && stuckTicks > STUCK_TICKS) {
+            startRecovery(mc);
+            return;
+        }
 
         String problem = safetyProblem(mc, player, target);
         if (problem != null) {
@@ -137,7 +193,7 @@ public final class AutoMinerClient implements ClientModInitializer {
             return;
         }
 
-        tickMouse4();
+        tickMouse4(mc);
         followRoute(mc, player, target);
     }
 
@@ -188,6 +244,9 @@ public final class AutoMinerClient implements ClientModInitializer {
                 stuckTicks = 0;
                 stuckAnchor = player.position();
                 mouse4Timer = 0;
+                recoveryWaitLeft = 0;
+                recoveryTimes.clear();
+                chatMention = false;
                 message(mc, "AutoMiner démarré : " + ROUTE.size() + " points, départ vers le point "
                         + (targetIndex + 1) + ".");
             }
@@ -258,13 +317,44 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // =====================================================================================
 
+    /** Bloqué : envoie la commande de retour, puis attend avant de reprendre (limité à quelques fois). */
+    private static void startRecovery(Minecraft mc) {
+        recoveryTimes.removeIf(t -> runTicks - t > RECOVERY_WINDOW_TICKS);
+        if (recoveryTimes.size() >= RECOVERY_MAX_PER_WINDOW) {
+            stop(mc);
+            message(mc, "Arrêt de sécurité : bloqué trop souvent (" + RECOVERY_MAX_PER_WINDOW
+                    + " retours en 10 minutes). Vérifie ton circuit.");
+            return;
+        }
+        recoveryTimes.add(runTicks);
+        releaseKeys(mc);
+        ClientPacketListener connection = mc.getConnection();
+        if (connection != null) {
+            connection.sendCommand(RECOVERY_COMMAND);
+        }
+        recoveryWaitLeft = RECOVERY_WAIT_TICKS;
+        message(mc, "Bloqué : /" + RECOVERY_COMMAND + " envoyé, reprise dans 10 s.");
+    }
+
+    /** Détecte un message du chat contenant ton pseudo (appelé par les événements de réception). */
+    private static void onChatMessage(Component message) {
+        if (!STOP_ON_CHAT_MENTION || !running) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        String name = mc.player.getName().getString().toLowerCase(Locale.ROOT);
+        if (!name.isEmpty() && message.getString().toLowerCase(Locale.ROOT).contains(name)) {
+            chatMention = true;
+        }
+    }
+
     /** Simule un appui sur MOUSE4 toutes les 10 secondes (touche à lier dans Options > Contrôles). */
-    private static void tickMouse4() {
+    private static void tickMouse4(Minecraft mc) {
         if (!MOUSE4_ENABLED) return;
         mouse4Timer++;
         if (mouse4Timer == MOUSE4_INTERVAL_TICKS) {
             KeyMapping.click(MOUSE4);
             KeyMapping.set(MOUSE4, true);
+            if (MOUSE4_DEBUG) message(mc, "MOUSE4 envoyé.");
         } else if (mouse4Timer >= MOUSE4_INTERVAL_TICKS + MOUSE4_HOLD_TICKS) {
             KeyMapping.set(MOUSE4, false);
             mouse4Timer = 0;
@@ -284,7 +374,7 @@ public final class AutoMinerClient implements ClientModInitializer {
                 BlockState aimedState = mc.level.getBlockState(hit.getBlockPos());
                 Block aimed = aimedState.getBlock();
                 // Viser de l'air (ou rien) ne doit jamais déclencher l'arrêt.
-                if (!aimedState.isAir() && !ALLOWED_BLOCKS.contains(aimed)) {
+                if (!aimedState.isAir() && !isAllowedBlock(aimed)) {
                     return "bloc non autorisé visé (" + BuiltInRegistries.BLOCK.getKey(aimed) + ").";
                 }
             }
@@ -318,6 +408,8 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     private static void stop(Minecraft mc) {
         running = false;
+        recoveryWaitLeft = 0;
+        chatMention = false;
         releaseKeys(mc);
     }
 
