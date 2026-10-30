@@ -58,7 +58,7 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static final boolean STOP_ON_UNLISTED_BLOCK = true;
     private static final Set<Block> ALLOWED_BLOCKS = Set.of(
             Blocks.OBSIDIAN, Blocks.CRYING_OBSIDIAN,
-            Blocks.STONE, Blocks.COBBLESTONE,
+            Blocks.STONE, Blocks.COBBLESTONE, Blocks.GLASS
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
             Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
             Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE,
