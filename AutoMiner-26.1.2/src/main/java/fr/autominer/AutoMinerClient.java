@@ -9,16 +9,22 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * AutoMiner v0.2 : suit un circuit de points enregistré à la main.
@@ -47,6 +53,25 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static final float MAX_PITCH_STEP = 5.0f;
     private static final int STUCK_TICKS = 300;            // 15 s sans avancer d'au moins 0,5 bloc
     private static final double STUCK_DISTANCE = 0.5;
+    /** Pendant un segment MINAGE : arrêt si le bloc visé n'est pas dans ALLOWED_BLOCKS. */
+    private static final boolean STOP_ON_UNLISTED_BLOCK = true;
+    private static final Set<Block> ALLOWED_BLOCKS = Set.of(
+            Blocks.STONE, Blocks.COBBLESTONE,
+            Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
+            Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
+            Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE,
+            Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE,
+            Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE, Blocks.NETHER_GOLD_ORE,
+            Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE,
+            Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE,
+            Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE,
+            Blocks.ANCIENT_DEBRIS);
+    /** Appui automatique sur le bouton 4 de la souris (MOUSE4) pendant que le circuit tourne. */
+    private static final boolean MOUSE4_ENABLED = true;
+    private static final int MOUSE4_INTERVAL_TICKS = 200;  // 200 ticks = 10 s
+    private static final int MOUSE4_HOLD_TICKS = 2;        // durée de l'appui
+    private static final InputConstants.Key MOUSE4 =
+            InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_4);
 
     // ---- État ----
     private static final List<RoutePoint> ROUTE = new ArrayList<>();
@@ -56,6 +81,7 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static int targetIndex = 1;
     private static int stuckTicks = 0;
     private static Vec3 stuckAnchor = Vec3.ZERO;
+    private static int mouse4Timer = 0;
 
     private static KeyMapping recordKey;
     private static KeyMapping legTypeKey;
@@ -108,6 +134,7 @@ public final class AutoMinerClient implements ClientModInitializer {
             return;
         }
 
+        tickMouse4();
         followRoute(mc, player, target);
     }
 
@@ -157,6 +184,7 @@ public final class AutoMinerClient implements ClientModInitializer {
                 targetIndex = nearestPointIndex(player.position());
                 stuckTicks = 0;
                 stuckAnchor = player.position();
+                mouse4Timer = 0;
                 message(mc, "AutoMiner démarré : " + ROUTE.size() + " points, départ vers le point "
                         + (targetIndex + 1) + ".");
             }
@@ -227,6 +255,19 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // =====================================================================================
 
+    /** Simule un appui sur MOUSE4 toutes les 10 secondes (touche à lier dans Options > Contrôles). */
+    private static void tickMouse4() {
+        if (!MOUSE4_ENABLED) return;
+        mouse4Timer++;
+        if (mouse4Timer == MOUSE4_INTERVAL_TICKS) {
+            KeyMapping.click(MOUSE4);
+            KeyMapping.set(MOUSE4, true);
+        } else if (mouse4Timer >= MOUSE4_INTERVAL_TICKS + MOUSE4_HOLD_TICKS) {
+            KeyMapping.set(MOUSE4, false);
+            mouse4Timer = 0;
+        }
+    }
+
     /** Retourne une raison d'arrêt, ou null si tout va bien. */
     private static String safetyProblem(Minecraft mc, LocalPlayer player, RoutePoint target) {
         if (!player.isAlive()) return "joueur mort.";
@@ -234,6 +275,15 @@ public final class AutoMinerClient implements ClientModInitializer {
         if (stuckTicks > STUCK_TICKS) return "joueur bloqué depuis trop longtemps.";
 
         if (target.mineLeg()) {
+            if (STOP_ON_UNLISTED_BLOCK
+                    && mc.hitResult instanceof BlockHitResult hit
+                    && hit.getType() == HitResult.Type.BLOCK) {
+                Block aimed = mc.level.getBlockState(hit.getBlockPos()).getBlock();
+                if (!ALLOWED_BLOCKS.contains(aimed)) {
+                    return "bloc non autorisé visé (" + BuiltInRegistries.BLOCK.getKey(aimed) + ").";
+                }
+            }
+
             if (STOP_WHEN_INVENTORY_FULL && player.getInventory().getFreeSlot() < 0) return "inventaire plein.";
 
             ItemStack held = player.getMainHandItem();
@@ -273,6 +323,7 @@ public final class AutoMinerClient implements ClientModInitializer {
         mc.options.keyRight.setDown(false);
         mc.options.keyJump.setDown(false);
         mc.options.keyAttack.setDown(false);
+        if (MOUSE4_ENABLED) KeyMapping.set(MOUSE4, false);
     }
 
     private static void message(Minecraft mc, String text) {
