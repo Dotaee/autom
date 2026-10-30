@@ -42,7 +42,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // ---- Réglages ----
     /** Le circuit ne démarre qu'en solo (comme annoncé dans la description). Mettre false pour lever la limite. */
-    private static final boolean SINGLEPLAYER_ONLY = true;
+    private static final boolean SINGLEPLAYER_ONLY = false;
     private static final float MIN_HEALTH = 6.0f;          // 3 coeurs
     /** Arrêt quand l'inventaire est plein (false = le bot continue de miner quand même). */
     private static final boolean STOP_WHEN_INVENTORY_FULL = false;
