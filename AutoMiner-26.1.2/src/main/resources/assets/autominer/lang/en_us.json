@@ -1,0 +1,7 @@
+{
+  "key.category.autominer.main": "AutoMiner",
+  "key.autominer.record": "Enregistrer un point",
+  "key.autominer.toggle_mining": "Type du prochain segment (MINAGE/TRANSIT)",
+  "key.autominer.run": "Démarrer / arrêter le circuit",
+  "key.autominer.clear": "Effacer le circuit"
+}
