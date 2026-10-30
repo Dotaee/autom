@@ -60,7 +60,6 @@ public final class AutoMinerClient implements ClientModInitializer {
     /** Pendant un segment MINAGE : arrêt si le bloc visé n'est pas dans ALLOWED_BLOCKS. */
     private static final boolean STOP_ON_UNLISTED_BLOCK = true;
     private static final Set<Block> ALLOWED_BLOCKS = Set.of(
-            Blocks.GLASS,
             Blocks.STONE, Blocks.COBBLESTONE,
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE,
             Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
@@ -90,8 +89,11 @@ public final class AutoMinerClient implements ClientModInitializer {
      * le bot S'ARRÊTE et ne se téléporte pas : tu dois répondre toi-même.
      */
     private static final boolean STOP_ON_CHAT_MENTION = true;
+    /** Fin de boucle : envoie cette commande à chaque fois que le bot revient au premier point. */
+    private static final boolean LOOP_COMMAND_ENABLED = true;
+    private static final String LOOP_COMMAND = "eat";             // sans le "/"
     /** Appui automatique sur le bouton 4 de la souris (MOUSE4) pendant que le circuit tourne. */
-    private static final boolean MOUSE4_ENABLED = true;
+    private static final boolean MOUSE4_ENABLED = false;
     private static final int MOUSE4_INTERVAL_TICKS = 200;  // 200 ticks = 10 s
     private static final int MOUSE4_HOLD_TICKS = 4;        // durée de l'appui
     /** Affiche un message dans le chat à chaque appui simulé (pour vérifier que ça part bien). */
@@ -280,7 +282,12 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         // Point atteint : on passe au suivant sans lâcher les touches (pas de saccade).
         if (horizontal < REACH_HORIZONTAL && Math.abs(dy) < REACH_VERTICAL) {
+            int reached = targetIndex;
             targetIndex = (targetIndex + 1) % ROUTE.size();
+            if (reached == 0 && LOOP_COMMAND_ENABLED) { // premier point atteint = boucle terminée
+                ClientPacketListener connection = mc.getConnection();
+                if (connection != null) connection.sendCommand(LOOP_COMMAND);
+            }
             return;
         }
 
