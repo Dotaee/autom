@@ -3,7 +3,6 @@ package fr.autominer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.event.player.ClientPlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
@@ -124,6 +123,8 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static volatile boolean chatMention = false;
     private static int ticksSinceBreak = 0;
     private static boolean lastLegMine = false;
+    private static BlockPos trackedPos = null;      // bloc visé au tick précédent (pour détecter une casse)
+    private static BlockState trackedState = null;
 
     private static KeyMapping recordKey;
     private static KeyMapping legTypeKey;
@@ -146,7 +147,6 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         ROUTE.addAll(RouteStore.load());
         ClientTickEvents.END_CLIENT_TICK.register(AutoMinerClient::tick);
-        ClientPlayerBlockBreakEvents.AFTER.register((world, player, pos, state) -> ticksSinceBreak = 0);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> onChatMessage(message));
         ClientReceiveMessageEvents.CHAT.register(
                 (message, signedMessage, sender, params, timestamp) -> onChatMessage(message));
@@ -199,8 +199,23 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         // Compteur "aucun bloc cassé" : ne tourne que pendant un segment MINAGE.
         if (target.mineLeg()) {
-            if (!lastLegMine) ticksSinceBreak = 0;
+            if (!lastLegMine) {
+                ticksSinceBreak = 0;
+                trackedPos = null;
+            }
             ticksSinceBreak++;
+
+            // Bloc cassé = le bloc visé au tick précédent a changé d'état (air ou autre bloc).
+            if (trackedPos != null && mc.level.getBlockState(trackedPos) != trackedState) {
+                ticksSinceBreak = 0;
+            }
+            if (mc.hitResult instanceof BlockHitResult aimedHit
+                    && aimedHit.getType() == HitResult.Type.BLOCK) {
+                trackedPos = aimedHit.getBlockPos();
+                trackedState = mc.level.getBlockState(trackedPos);
+            } else {
+                trackedPos = null;
+            }
         }
         lastLegMine = target.mineLeg();
 
