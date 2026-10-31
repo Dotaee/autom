@@ -3,6 +3,7 @@ package fr.autominer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.player.ClientPlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
@@ -82,8 +83,15 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static final boolean RECOVERY_ENABLED = true;
     private static final String RECOVERY_COMMAND = "home gen";   // sans le "/"
     private static final int RECOVERY_WAIT_TICKS = 200;          // 10 s
-    private static final int RECOVERY_MAX_PER_WINDOW = 4;        // au-delà : arrêt définitif
+    /** true = arrêt définitif au-delà de RECOVERY_MAX_PER_WINDOW retours dans la fenêtre ; false = illimité. */
+    private static final boolean RECOVERY_LIMIT_ENABLED = false;
+    private static final int RECOVERY_MAX_PER_WINDOW = 4;
     private static final int RECOVERY_WINDOW_TICKS = 12000;      // fenêtre de 10 minutes
+    /** Déclencheurs de retour (envoient aussi RECOVERY_COMMAND). */
+    private static final boolean NO_BREAK_RECOVERY_ENABLED = true;   // MINAGE seulement
+    private static final int NO_BREAK_TICKS = 60;                    // 3 s sans casser de bloc
+    private static final boolean HAZARD_BLOCK_RECOVERY_ENABLED = true; // pancarte / glace visée (MINAGE)
+    private static final boolean WATER_RECOVERY_ENABLED = true;      // tombé dans l'eau
     /**
      * Garde-fou : si un message du chat contient ton pseudo (staff, message privé, question...),
      * le bot S'ARRÊTE et ne se téléporte pas : tu dois répondre toi-même.
@@ -114,6 +122,8 @@ public final class AutoMinerClient implements ClientModInitializer {
     private static long runTicks = 0;
     private static final List<Long> recoveryTimes = new ArrayList<>();
     private static volatile boolean chatMention = false;
+    private static int ticksSinceBreak = 0;
+    private static boolean lastLegMine = false;
 
     private static KeyMapping recordKey;
     private static KeyMapping legTypeKey;
@@ -136,6 +146,7 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         ROUTE.addAll(RouteStore.load());
         ClientTickEvents.END_CLIENT_TICK.register(AutoMinerClient::tick);
+        ClientPlayerBlockBreakEvents.AFTER.register((world, player, pos, state) -> ticksSinceBreak = 0);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> onChatMessage(message));
         ClientReceiveMessageEvents.CHAT.register(
                 (message, signedMessage, sender, params, timestamp) -> onChatMessage(message));
@@ -175,6 +186,8 @@ public final class AutoMinerClient implements ClientModInitializer {
                 stuckTicks = 0;
                 stuckAnchor = player.position();
                 mouse4Timer = 0;
+                ticksSinceBreak = 0;
+                lastLegMine = false;
                 message(mc, "Reprise du circuit depuis le premier point.");
             }
             return;
@@ -184,9 +197,19 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         RoutePoint target = ROUTE.get(targetIndex);
 
-        if (RECOVERY_ENABLED && stuckTicks > STUCK_TICKS) {
-            startRecovery(mc);
-            return;
+        // Compteur "aucun bloc cassé" : ne tourne que pendant un segment MINAGE.
+        if (target.mineLeg()) {
+            if (!lastLegMine) ticksSinceBreak = 0;
+            ticksSinceBreak++;
+        }
+        lastLegMine = target.mineLeg();
+
+        if (RECOVERY_ENABLED) {
+            String trigger = recoveryTrigger(mc, player, target);
+            if (trigger != null) {
+                startRecovery(mc, trigger);
+                return;
+            }
         }
 
         String problem = safetyProblem(mc, player, target);
@@ -248,6 +271,8 @@ public final class AutoMinerClient implements ClientModInitializer {
                 stuckAnchor = player.position();
                 mouse4Timer = 0;
                 recoveryWaitLeft = 0;
+                ticksSinceBreak = 0;
+                lastLegMine = false;
                 recoveryTimes.clear();
                 chatMention = false;
                 message(mc, "AutoMiner démarré : " + ROUTE.size() + " points, départ vers le point "
@@ -325,10 +350,33 @@ public final class AutoMinerClient implements ClientModInitializer {
 
     // =====================================================================================
 
+    /** Retourne la raison d'un retour à la maison, ou null s'il n'y en a pas. */
+    private static String recoveryTrigger(Minecraft mc, LocalPlayer player, RoutePoint target) {
+        if (stuckTicks > STUCK_TICKS) return "Bloqué";
+        if (WATER_RECOVERY_ENABLED && player.isInWater()) return "Tombé dans l'eau";
+
+        if (target.mineLeg()) {
+            if (HAZARD_BLOCK_RECOVERY_ENABLED
+                    && mc.hitResult instanceof BlockHitResult hit
+                    && hit.getType() == HitResult.Type.BLOCK) {
+                String path = BuiltInRegistries.BLOCK
+                        .getKey(mc.level.getBlockState(hit.getBlockPos()).getBlock()).getPath();
+                if (path.endsWith("_sign") || path.endsWith("_hanging_sign")) return "Pancarte visée";
+                if (path.equals("ice") || path.equals("packed_ice") || path.equals("blue_ice")) {
+                    return "Glace visée";
+                }
+            }
+            if (NO_BREAK_RECOVERY_ENABLED && ticksSinceBreak > NO_BREAK_TICKS) {
+                return "Aucun bloc cassé depuis 3 s";
+            }
+        }
+        return null;
+    }
+
     /** Bloqué : envoie la commande de retour, puis attend avant de reprendre (limité à quelques fois). */
-    private static void startRecovery(Minecraft mc) {
+    private static void startRecovery(Minecraft mc, String reason) {
         recoveryTimes.removeIf(t -> runTicks - t > RECOVERY_WINDOW_TICKS);
-        if (recoveryTimes.size() >= RECOVERY_MAX_PER_WINDOW) {
+        if (RECOVERY_LIMIT_ENABLED && recoveryTimes.size() >= RECOVERY_MAX_PER_WINDOW) {
             stop(mc);
             message(mc, "Arrêt de sécurité : bloqué trop souvent (" + RECOVERY_MAX_PER_WINDOW
                     + " retours en 10 minutes). Vérifie ton circuit.");
@@ -341,7 +389,7 @@ public final class AutoMinerClient implements ClientModInitializer {
             connection.sendCommand(RECOVERY_COMMAND);
         }
         recoveryWaitLeft = RECOVERY_WAIT_TICKS;
-        message(mc, "Bloqué : /" + RECOVERY_COMMAND + " envoyé, reprise dans 10 s.");
+        message(mc, reason + " : /" + RECOVERY_COMMAND + " envoyé, reprise dans 10 s.");
     }
 
     /** Détecte un message du chat contenant ton pseudo (appelé par les événements de réception). */
