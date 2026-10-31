@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.event.client.player.ClientPlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -147,6 +148,8 @@ public final class AutoMinerClient implements ClientModInitializer {
 
         ROUTE.addAll(RouteStore.load());
         ClientTickEvents.END_CLIENT_TICK.register(AutoMinerClient::tick);
+        // Casse détectée au moment où le client détruit le bloc (marche même si le serveur le remet aussitôt).
+        ClientPlayerBlockBreakEvents.AFTER.register((world, player, pos, state) -> ticksSinceBreak = 0);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> onChatMessage(message));
         ClientReceiveMessageEvents.CHAT.register(
                 (message, signedMessage, sender, params, timestamp) -> onChatMessage(message));
